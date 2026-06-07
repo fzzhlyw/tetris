@@ -1,0 +1,23 @@
+# Maven
+target/
+*.class
+*.jar
+!lib/*.jar
+
+# IDE
+.idea/
+*.iml
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project-specific
+music/
+
+# Logs
+*.log
