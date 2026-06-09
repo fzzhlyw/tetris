@@ -1885,17 +1885,13 @@ public class TetrisPro extends JFrame {
 
                 // Flash animation for cleared rows
                 if (flashRows) {
-                    if (flashCount >= flashMaxCount + 30) {
-                        flashRows = false;
-                    } else {
-                        flashCount++;
-                        int alpha = Math.max(0, 220 - flashCount * 12);
-                        g2.setColor(new Color(255, 255, 255, alpha));
-                        for (int i = 0; i < flashMaxCount && i < flashRowIndices.length; i++) {
-                            int row = flashRowIndices[i];
-                            if (row >= 0 && row < ROWS) {
-                                g2.fillRect(5, 30 + row * BLOCK_SIZE, GAME_WIDTH, BLOCK_SIZE);
-                            }
+                    flashCount++;
+                    int alpha = Math.max(0, 220 - flashCount * 12);
+                    g2.setColor(new Color(255, 255, 255, alpha));
+                    for (int i = 0; i < flashMaxCount && i < flashRowIndices.length; i++) {
+                        int row = flashRowIndices[i];
+                        if (row >= 0 && row < ROWS) {
+                            g2.fillRect(5, 30 + row * BLOCK_SIZE, GAME_WIDTH, BLOCK_SIZE);
                         }
                     }
                 }
@@ -2009,6 +2005,8 @@ public class TetrisPro extends JFrame {
                 }
                 gameOverAlpha = Math.min(220, gameOverAlpha + 5);
                 long elapsedMs = System.currentTimeMillis() - gameOverAnimStartMs;
+                // Cap elapsed to avoid unbounded phase growth degrading sin/cos precision
+                elapsedMs = Math.min(elapsedMs, 5000);
                 int phase = (int) (elapsedMs / 16); // ~16ms per frame equivalent
                 int overlayAlpha = Math.min(255, gameOverAlpha);
                 // Dark base background (only over game area)
@@ -2863,10 +2861,6 @@ public class TetrisPro extends JFrame {
 
             y += 24; // extra bottom padding for stats section
 
-            // === Start screen: falling tetromino decoration ===
-            if (!gameStarted && !gameOver) {
-                drawFallingTetrominoAnim(g2, startX, startY, boxW, GAME_HEIGHT + 30);
-            }
         }
 
         private void drawFallingTetrominoAnim(Graphics2D g2, int panelX, int panelY, int panelW, int panelH) {
@@ -3365,16 +3359,10 @@ public class TetrisPro extends JFrame {
 
         void shutdown() {
             stopBgMusic();
-            // Shutdown sound effect executor with proper wait
+            // Shutdown sound effect executor asynchronously to avoid EDT freeze
             if (soundExecutor != null && !soundExecutor.isShutdown()) {
                 soundExecutor.shutdownNow();
-                try {
-                    if (!soundExecutor.awaitTermination(2, java.util.concurrent.TimeUnit.SECONDS)) {
-                        soundExecutor.shutdownNow();
-                    }
-                } catch (InterruptedException ignored) {
-                    soundExecutor.shutdownNow();
-                }
+                // Do NOT block EDT with awaitTermination — executor threads are daemon
             }
             // Close sfx line after executor shutdown to avoid concurrent access
             SourceDataLine lineToClose;

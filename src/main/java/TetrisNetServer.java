@@ -42,8 +42,8 @@ public class TetrisNetServer {
         if (args.length > 0) {
             try {
                 port = Integer.parseInt(args[0]);
-                if (port < 1 || port > 65535) {
-                    System.err.println("端口号范围 1-65535，使用默认端口 " + DEFAULT_PORT);
+                if (port < 1024 || port > 65535) {
+                    System.err.println("端口号范围 1024-65535，使用默认端口 " + DEFAULT_PORT);
                     port = DEFAULT_PORT;
                 }
             } catch (NumberFormatException e) {
@@ -444,6 +444,11 @@ public class TetrisNetServer {
         }
 
         private void handleMessage(String line) {
+
+            if (line.equals("REFRESH")) {
+                broadcastPlayerList();
+                return;
+            }
 
             if (line.equals("SINGLEPLAYER")) {
                 synchronized (TetrisNetServer.stateLock) {

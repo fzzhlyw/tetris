@@ -263,8 +263,8 @@ public class TetrisNetClient extends JFrame {
         return gy;
     }
 
-    private void lockPiece() {
-        if (gameOver || paused || currentShape == null || isLocking) return;
+    private boolean lockPiece() {
+        if (gameOver || paused || currentShape == null || isLocking) return false;
         isLocking = true;
         try {
             for (int r = 0; r < currentShape.length; r++) {
@@ -278,6 +278,7 @@ public class TetrisNetClient extends JFrame {
             }
             checkLines();
             sendBoard();
+            return true;
         } finally { isLocking = false; }
     }
 
@@ -296,6 +297,7 @@ public class TetrisNetClient extends JFrame {
             flashMax = full.size();
             for (int i = 0; i < full.size() && i < flashRowsList.length; i++)
                 flashRowsList[i] = full.get(i);
+            currentShape = null;
             gamePanel.repaint();
             if (clearTimer != null) { clearTimer.cancel(); clearTimer.purge(); }
             clearTimer = new java.util.Timer();
@@ -577,13 +579,19 @@ public class TetrisNetClient extends JFrame {
                 netOut = new PrintWriter(socket.getOutputStream(), true);
                 netIn = new BufferedReader(new InputStreamReader(socket.getInputStream()));
 
-                if (connectingCancelled) return;
+                if (connectingCancelled) {
+                    socket.close();
+                    return;
+                }
 
                 String idLine = netIn.readLine();
                 if (idLine != null && idLine.startsWith("PLAYER_ID:"))
                     myPlayerId = Integer.parseInt(idLine.substring(10));
 
-                if (connectingCancelled) return;
+                if (connectingCancelled) {
+                    socket.close();
+                    return;
+                }
 
                 if (joinMode == 1) {
                     // Server mode: enter lobby after connect
@@ -773,6 +781,14 @@ public class TetrisNetClient extends JFrame {
     private void handleDisconnect() {
         if (!connected) return;
         connected = false;
+        // Close socket resources to prevent leak
+        if (socket != null) { try { socket.close(); } catch (IOException ignored) {} }
+        if (hostServerSocket != null) { try { hostServerSocket.close(); } catch (IOException ignored) {} }
+        // Don't override RESULT screen (player may have already seen win/loss)
+        if (currentScreen == Screen.RESULT) {
+            gamePanel.repaint();
+            return;
+        }
         if (currentScreen == Screen.LOBBY || joinMode == 1) {
             resultMessage = "连接断开！";
             currentScreen = Screen.MENU;
@@ -858,7 +874,7 @@ public class TetrisNetClient extends JFrame {
         oppScore = 0; oppLevel = 1; oppLines = 0;
         holdType = -1; holdUsed = false;
         currentType = -1; currentShape = null;
-        gameOver = false; gameStarted = true;
+        gameOver = false; paused = false; gameStarted = true;
         oppGameOver = false; won = false;
         flashRows = false; garbagePending = 0; isLocking = false;
         fillBag();
@@ -1196,6 +1212,7 @@ public class TetrisNetClient extends JFrame {
                         int refLeft = cx - 90 / 2;
                         if (e.getX() >= refLeft && e.getX() <= refLeft + 90 &&
                             e.getY() >= btnYb && e.getY() <= btnYb + bBtnH) {
+                            sendNetMsg("REFRESH");
                             repaint();
                             return;
                         }
@@ -1753,7 +1770,10 @@ public class TetrisNetClient extends JFrame {
                         if (e.getKeyCode() == KeyEvent.VK_ESCAPE) togglePause();
                         return;
                     }
-                    if (flashRows) return;
+                    if (flashRows) {
+                        if (e.getKeyCode() == KeyEvent.VK_ESCAPE) { togglePause(); }
+                        return;
+                    }
                     switch (e.getKeyCode()) {
                         case KeyEvent.VK_LEFT: moveLeft(); startKeyRepeat(e.getKeyCode()); break;
                         case KeyEvent.VK_RIGHT: moveRight(); startKeyRepeat(e.getKeyCode()); break;
@@ -1766,7 +1786,10 @@ public class TetrisNetClient extends JFrame {
                     }
                 }
                 public void keyReleased(KeyEvent e) {
-                    if (keyRepeatTimer != null) { keyRepeatTimer.stop(); keyRepeatTimer = null; }
+                    if (keyRepeatTimer != null && e.getKeyCode() == keyRepeatCode) {
+                        keyRepeatTimer.stop();
+                        keyRepeatTimer = null;
+                    }
                 }
             });
 
@@ -1780,8 +1803,7 @@ public class TetrisNetClient extends JFrame {
                         if (validPos(currentShape, currentX, currentY + 1)) {
                             currentY++;
                             lastDropTime = now;
-                        } else {
-                            lockPiece();
+                        } else if (lockPiece()) {
                             lastDropTime = now;
                         }
                     }
@@ -2101,15 +2123,12 @@ public class TetrisNetClient extends JFrame {
             // Flash animation
             if (flashRows) {
                 flashCount++;
-                if (flashCount > flashMax + 20) flashRows = false;
-                else {
-                    int alpha = Math.max(0, 220 - flashCount * 12);
-                    g2.setColor(new Color(255, 255, 255, alpha));
-                    for (int i = 0; i < flashMax && i < flashRowsList.length; i++) {
-                        int row = flashRowsList[i];
-                        if (row >= 0 && row < ROWS)
-                            g2.fillRect(5, 30 + row*BLOCK_SIZE, GAME_WIDTH, BLOCK_SIZE);
-                    }
+                int alpha = Math.max(0, 220 - flashCount * 12);
+                g2.setColor(new Color(255, 255, 255, alpha));
+                for (int i = 0; i < flashMax && i < flashRowsList.length; i++) {
+                    int row = flashRowsList[i];
+                    if (row >= 0 && row < ROWS)
+                        g2.fillRect(5, 30 + row*BLOCK_SIZE, GAME_WIDTH, BLOCK_SIZE);
                 }
             }
 
